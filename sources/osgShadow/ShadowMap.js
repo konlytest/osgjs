@@ -60,7 +60,7 @@ CameraCullCallback.prototype = {
  *  ShadowMap provides an implementation of shadow textures.
  *  @class ShadowMap
  */
-var ShadowMap = function ( settings ) {
+var ShadowMap = function ( settings, shadowTexture ) {
     ShadowTechnique.call( this );
 
     this._projectionMatrix = mat4.create();
@@ -77,14 +77,28 @@ var ShadowMap = function ( settings ) {
     this._cameraShadow.setReferenceFrame( Transform.ABSOLUTE_RF );
     this._cameraShadow.setClearColor( vec4.fromValues( 1.0, 1.0, 1.0, 1.0 ) );
 
-    this._texture = new ShadowTexture();
-    this._textureUnitBase = 4;
-    this._textureUnit = this._textureUnitBase;
+    if ( shadowTexture ) {
 
-    // see shadowSettings.js header for param explanations
-    this._textureMagFilter = undefined;
-    this._textureMinFilter = undefined;
+        this._texture = shadowTexture;
+
+    } else {
+
+        this._texture = new ShadowTexture();
+        this._textureUnitBase = 4;
+        this._textureUnit = this._textureUnitBase;
+
+        // see shadowSettings.js header for param explanations
+        this._textureMagFilter = undefined;
+        this._textureMinFilter = undefined;
+
+    }
+
+
     this._textureSize = 256;
+    var unifRenderSize = Uniform.createFloat2( 'RenderSize' );
+    this._texelSizeUniform = Uniform.createFloat1( 1.0 / this._textureSize, 'texelSize' );
+    this._renderSize = unifRenderSize.getInternalArray();
+    this._renderSize[ 0 ] = this._renderSize[ 1 ] = this._textureSize;
 
     this._receivingStateset = undefined;
 
@@ -92,14 +106,9 @@ var ShadowMap = function ( settings ) {
     this._casterStateSet.addUniform( Uniform.createFloat1( 0, 'exponent0' ) );
     this._casterStateSet.addUniform( Uniform.createFloat1( 0, 'exponent1' ) );
     this._casterStateSet.addUniform( Uniform.createFloat1( 0.005, 'bias' ) );
-
-    this._texelSizeUniform = Uniform.createFloat1( 1.0 / this._textureSize, 'texelSize' );
     this._casterStateSet.addUniform( this._texelSizeUniform );
-
-    var unifRenderSize = Uniform.createFloat2( 'RenderSize' );
     this._casterStateSet.addUniform( unifRenderSize );
-    this._renderSize = unifRenderSize.getInternalArray();
-    this._renderSize[ 0 ] = this._renderSize[ 1 ] = this._textureSize;
+
 
     // make sure no unintended blend happens
     // if casting semi-transparent (alphablend material with full opaque pixels) shadow
@@ -351,7 +360,7 @@ ShadowMap.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( S
     },
 
     /** initialize the ShadowedScene and local cached data structures.*/
-    init: function () {
+    init: function ( noTexture ) {
 
         if ( !this._shadowedScene ) return;
 
@@ -367,15 +376,17 @@ ShadowMap.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( S
             this._cameraShadow.setClearColor( vec4.fromValues( 1.0, 1.0, 1.0, 1.0 ) );
         }
 
-        this.initTexture();
-
         var lightNumber = this._light.getLightNumber();
-        this._textureUnit = this._textureUnitBase + lightNumber;
+
+        if ( !noTexture ) {
+            this.initTexture();
+
+            this._textureUnit = this._textureUnitBase + lightNumber;
+            this._texture.setLightUnit( lightNumber );
+            this._texture.setName( 'ShadowTexture' + this._textureUnit );
+        }
+
         this._cameraShadow.setName( 'light_shadow_camera' + this._light.getName() );
-
-        this._texture.setLightUnit( lightNumber );
-        this._texture.setName( 'ShadowTexture' + this._textureUnit );
-
         this._shadowReceiveAttribute.setLightNumber( lightNumber );
 
 
@@ -429,7 +440,7 @@ ShadowMap.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( S
         return true;
     },
 
-    updateShadowTechnique: function ( /*nv*/) {
+    updateShadowTechnique: function ( nv, viewportDimension ) {
 
         var camera = this._cameraShadow;
         var texture = this._texture;
@@ -437,21 +448,37 @@ ShadowMap.prototype = MACROUTILS.objectLibraryClass( MACROUTILS.objectInherit( S
         if ( camera && texture ) {
 
             var vp = camera.getViewport();
+
             if ( !vp ) {
                 vp = new Viewport();
                 camera.setViewport( vp );
             }
 
-            // if texture size changed update the camera rtt params
-            if ( vp.width() !== texture.getWidth() ||
-                vp.height() !== texture.getHeight() ) {
+            if ( viewportDimension ) {
+                // if texture size changed update the camera rtt params
+                if ( vp.width() !== viewportDimension[ 2 ] ||
+                    vp.height() !== viewportDimension[ 3 ] ) {
 
-                camera.detachAll();
+                    camera.detachAll();
 
-                camera.attachTexture( FrameBufferObject.COLOR_ATTACHMENT0, texture );
-                camera.attachRenderBuffer( FrameBufferObject.DEPTH_ATTACHMENT, FrameBufferObject.DEPTH_COMPONENT16 );
+                    camera.attachTexture( FrameBufferObject.COLOR_ATTACHMENT0, texture );
+                    camera.attachRenderBuffer( FrameBufferObject.DEPTH_ATTACHMENT, FrameBufferObject.DEPTH_COMPONENT16 );
 
-                camera.getViewport().setViewport( 0, 0, texture.getWidth(), texture.getHeight() );
+                    camera.getViewport().setViewport( 0, 0, texture.getWidth(), texture.getHeight() );
+                }
+
+            } else {
+                // if texture size changed update the camera rtt params
+                if ( vp.width() !== texture.getWidth() ||
+                    vp.height() !== texture.getHeight() ) {
+
+                    camera.detachAll();
+
+                    camera.attachTexture( FrameBufferObject.COLOR_ATTACHMENT0, texture );
+                    camera.attachRenderBuffer( FrameBufferObject.DEPTH_ATTACHMENT, FrameBufferObject.DEPTH_COMPONENT16 );
+
+                    camera.getViewport().setViewport( 0, 0, texture.getWidth(), texture.getHeight() );
+                }
             }
         }
     },

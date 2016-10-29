@@ -37,7 +37,7 @@
             'rotateOffset': false,
             'exponent': 80.0,
             'exponent1': 0.33,
-
+            'atlas': false,
             'lightMovement': 'Rotate',
             'lightSpeed': 0.5,
             'lightDistance': 3.0,
@@ -1214,9 +1214,28 @@
             ///////////////////////////////
 
             this._shadowSettings.push( shadowSettings );
-            var shadowMap = new osgShadow.ShadowMap( shadowSettings );
-            this._lightAndShadowScene.addShadowTechnique( shadowMap );
-            shadowMap.setShadowSettings( shadowSettings );
+
+            var shadowMap;
+            if ( this._config[ 'atlas' ] ) {
+                if ( !this._shadowMapAtlas ) {
+
+                    shadowSettings.atlasSize = 2048;
+                    var shadowMapAtlas = new osgShadow.ShadowMapAtlas( shadowSettings );
+                    this._lightAndShadowScene.addShadowTechnique( shadowMapAtlas );
+                    shadowMapAtlas.setShadowSettings( shadowSettings );
+                    //this._shadowTechnique.push( shadowMapAtlas );
+                    this._shadowMapAtlas = shadowMapAtlas;
+
+                }
+
+                shadowMap = this._shadowMapAtlas.addLight( light, shadowSettings );
+            } else {
+
+                shadowMap = new osgShadow.ShadowMap( shadowSettings );
+                this._lightAndShadowScene.addShadowTechnique( shadowMap );
+                shadowMap.setShadowSettings( shadowSettings );
+
+            }
             this._shadowTechnique.push( shadowMap );
 
             var shadowCam = shadowMap.getCamera();
